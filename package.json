@@ -1,0 +1,22 @@
+{
+  "name": "crazycloud",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.5.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.22.1",
+    "node-telegram-bot-api": "^0.61.0",
+    "telegraf": "^4.16.3",
+    "ws": "^8.18.3"
+  },
+  "description": "",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
