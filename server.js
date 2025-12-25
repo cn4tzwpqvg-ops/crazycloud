@@ -33,9 +33,9 @@ const db = new Database(dbPath);
 
 
 console.log("Запуск бота и сервера1");
-console.log(" Telegram token:", TOKEN ? "OK" : " отсутствует");
+console.log(" Telegram token:",TOKEN ? "OK" : " отсутствует");
 console.log(" Сервер будет слушать:", `http://${HOST}:${PORT}`);
-console.log(" База данных SQLite:", dbPath);
+console.log(" База данных SQLite:",dbPath);
 
 // ===== Создание таблиц =====
 db.prepare(`
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS clients (
   last_active TEXT
 )
 `).run();
-console.log(" Таблица clients готова");
+console.log("Таблица clients готова");
 db.prepare(`
 CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at TEXT
 )
 `).run();
-console.log(" Таблица orders готова");
+console.log("Таблица orders готова");
 // ===== добавляем client_chat_id (если ещё нет) =====
 try {
   db.prepare(`ALTER TABLE orders ADD COLUMN client_chat_id INTEGER`).run();
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS couriers (
   chat_id INTEGER
 )
 `).run();
-console.log(" Таблица couriers готова");
+console.log("Таблица couriers готова");
 db.prepare(`
 CREATE TABLE IF NOT EXISTS order_messages (
   order_id TEXT,
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   created_at TEXT
 )
 `).run();
-console.log(" Таблица reviews с рейтингом готова");
+console.log("Таблица reviews с рейтингом готова");
 
 
 
@@ -146,7 +146,7 @@ let COURIERS = getCouriers();
 addCourier(ADMIN_USERNAME, ADMIN_ID);
 
 // Актуальный список
-console.log(" Текущие курьеры:", COURIERS);
+console.log("Текущие курьеры:", COURIERS);
 
 function isCourier(username) {
   return !!COURIERS[username];
@@ -161,14 +161,14 @@ function addCourier(username, chatId) {
   `).run(username, chatId);
 
   COURIERS = getCouriers();
-  console.log(` Курьер добавлен/обновлён: @${username}`);
+  console.log(`Курьер добавлен/обновлён: @${username}`);
   return true;
 }
 
 function removeCourier(username) {
   db.prepare("DELETE FROM couriers WHERE username=?").run(username);
   COURIERS = getCouriers();
-  console.log(` Курьер удалён: @${username}`);
+  console.log(`Курьер удалён: @${username}`);
 }
 
 function getOrderMessages(orderId) {
@@ -192,7 +192,7 @@ function clearOrderMessage(orderId, chatId) {
 // ================= Клиенты =================
 // ================= Клиенты =================
 function addOrUpdateClient(username, first_name, chat_id) {
-   console.log(` Добавляем/обновляем клиента: ${username}, chat_id: ${chat_id}`);
+   console.log(`Добавляем/обновляем клиента: ${username}, chat_id: ${chat_id}`);
   const now = new Date().toISOString();
   db.prepare(`
     INSERT INTO clients (username, first_name, subscribed, created_at, last_active, chat_id)
@@ -212,7 +212,7 @@ function getClient(username) {
 
 
 function addOrder(order) {
-  console.log(` Новый заказ: ${order.id} от ${order.tgNick}`);
+  console.log(`Новый заказ: ${order.id} от ${order.tgNick}`);
 
   if (!order.client_chat_id) {
   const cleanNick = order.tgNick.replace(/^@+/, "");
@@ -225,7 +225,7 @@ function addOrder(order) {
     );
   } else {
     console.log(
-      ` Нет chat_id для клиента @${cleanNick}, отзыв невозможен`
+      `Нет chat_id для клиента @${cleanNick}, отзыв невозможен`
     );
   }
 }
@@ -263,7 +263,7 @@ function addOrder(order) {
 
 function getOrderById(id) { return db.prepare("SELECT * FROM orders WHERE id=?").get(id); }
 function updateOrderStatus(id, status, courier_username = null) {
-  console.log(` Обновляем заказ ${id} статус: ${status}, курьер: ${courier_username}`);
+  console.log(`Обновляем заказ ${id} статус: ${status},курьер: ${courier_username}`);
   const now = new Date().toISOString();
   if (status === "taken") db.prepare("UPDATE orders SET status=?, courier_username=?, taken_at=? WHERE id=?").run(status, courier_username, now, id);
 else if (status === "delivered")
@@ -283,7 +283,7 @@ function takeOrderAtomic(orderId, username) {
 
   const now = new Date().toISOString();
 
-  console.log(` Попытка взять заказ ${orderId} курьером ${username}`);
+  console.log(`Попытка взять заказ ${orderId} курьером ${username}`);
 
   const res = db.prepare(`
     UPDATE orders
@@ -295,7 +295,7 @@ function takeOrderAtomic(orderId, username) {
   `).run(username, now, orderId);
 
   console.log(
-    ` Результат взятия: ${res.changes === 1 ? "успешно" : "не удалось"}`
+    `Результат взятия: ${res.changes === 1 ? "успешно" : "не удалось"}`
   );
 
   return res.changes === 1;
@@ -313,7 +313,7 @@ const releaseOrderTx = db.transaction((orderId) => {
 function escapeMarkdownV2(text) { if (!text) return ""; return text.replace(/([_*[\]()~`>#+\-=|{}.!])/g, "\\$1"); }
 
 // ================= Построение сообщения =================
-const deliveryMap = { "DHL": "DHL", "Курьер": " Курьер" };
+const deliveryMap = {"DHL": "DHL", "Курьер": "Курьер" };
 const paymentMap = {
   "Наличные": "Наличные",
   "Карта": "Банковская карта",
@@ -325,7 +325,7 @@ const courierName = order.courier_username || null;
 
 
   const courierText = courierName
-    ? `\n Курьер: ${escapeMarkdownV2(courierName)}`
+    ? `\nКурьер: ${escapeMarkdownV2(courierName)}`
     : "";
 
   const statusText =
@@ -352,14 +352,14 @@ const courierName = order.courier_username || null;
     ` *Состав заказа:*`,
     `${escapeMarkdownV2(order.orderText)}`,
     ``,
-    ` Статус: *${escapeMarkdownV2(statusText)}*${courierText}`
+    `Статус: *${escapeMarkdownV2(statusText)}*${courierText}`
   ].join("\n");
 }
 
 async function askForReview(order) {
   // 1️⃣ Проверка: есть ли chat_id клиента
   if (!order.client_chat_id) {
-    console.log(" НЕТ client_chat_id — отзыв невозможен");
+    console.log("НЕТ client_chat_id — отзыв невозможен");
     return; // прерываем выполнение функции
   }
 
@@ -372,7 +372,7 @@ async function askForReview(order) {
   });
 
   console.log(
-    " waitingReview SET",
+    "waitingReview SET",
     order.client_chat_id,
     waitingReview.get(order.client_chat_id)
   );
@@ -380,7 +380,7 @@ async function askForReview(order) {
   //  Отправляем сообщение с кнопками оценки
   await bot.sendMessage(
     order.client_chat_id,
-    ` Заказ №${order.id} доставлен 
+    `Заказ №${order.id} доставлен 
 
  Курьер: @${order.courier_username}
 
@@ -429,7 +429,7 @@ async function sendOrUpdateOrder(order) {
 
     // ===== NEW =====
     if (order.status === "new") {
-      kb = [[{ text: " Взять заказ", callback_data: `take_${order.id}` }]];
+      kb = [[{ text: "Взять заказ", callback_data: `take_${order.id}` }]];
     }
 
     // ===== TAKEN =====
@@ -493,7 +493,7 @@ bot.on("callback_query", async (q) => {
   const fromId = q.from.id;
   const username = q.from.username;
 
-  console.log(`📩 Callback от @${username} (id: ${fromId}): ${data}`);
+  console.log(`Callback от @${username} (id: ${fromId}): ${data}`);
 
 
   if (!username) {
@@ -693,7 +693,7 @@ bot.onText(/\/start/, (msg) => {
    console.log(`Курьер @${username} добавлен/обновлён, chat_id: ${id}`);
   }
 
-  let welcomeText = "Добро пожаловать!  Чтобы оформить заказ нажмите кнопку снизу открыть магазин.";
+  let welcomeText = "Добро пожаловать! Чтобы оформить заказ нажмите кнопку снизу открыть магазин.";
   let keyboard = [];
 
   if (username === ADMIN_USERNAME) {
@@ -945,10 +945,10 @@ if (text === "Курьеры" && id === ADMIN_ID) {
   // ===== Личный кабинет =====
   if (text === "Личный кабинет") {
     const info = [
-      ` Имя: ${client.first_name || "—"}`,
-      ` Город: ${client.city || "—"}`,
-      ` Последняя активность: ${client.last_active || "—"}`,
-      ` Всего заказов: ${db.prepare("SELECT COUNT(*) as cnt FROM orders WHERE tgNick=?").get(username).cnt}`
+      `Имя: ${client.first_name || "—"}`,
+      `Город: ${client.city || "—"}`,
+      `Последняя активность: ${client.last_active || "—"}`,
+      `Всего заказов: ${db.prepare("SELECT COUNT(*) as cnt FROM orders WHERE tgNick=?").get(username).cnt}`
     ].join("\n");
     return bot.sendMessage(id, info);
   }
@@ -1043,7 +1043,7 @@ if (text === "Заказы курьера" && id === ADMIN_ID) {
 // ===== Выполненные заказы (выбор курьера) =====
 if (text === "Выполненные заказы" && id === ADMIN_ID) {
   const couriers = db.prepare("SELECT username FROM couriers").all();
-  if (couriers.length === 0) return bot.sendMessage(id, " Нет курьеров для выбора");
+  if (couriers.length === 0) return bot.sendMessage(id, "Нет курьеров для выбора");
 
   const keyboard = couriers.map(c => [{ text: `@${c.username}` }]);
   keyboard.push([{ text: "Назад" }]);
@@ -1057,7 +1057,7 @@ if (text === "Выполненные заказы" && id === ADMIN_ID) {
 }
 
   // ===== Статистика заказов =====
-if (text === " Статистика" && id === ADMIN_ID) {
+if (text === "Статистика" && id === ADMIN_ID) {
   const total = db.prepare("SELECT COUNT(*) c FROM orders").get().c;
   const newO = db.prepare("SELECT COUNT(*) c FROM orders WHERE status='new'").get().c;
   const taken = db.prepare("SELECT COUNT(*) c FROM orders WHERE status='taken'").get().c;
