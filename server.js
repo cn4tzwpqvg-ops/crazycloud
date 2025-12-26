@@ -973,14 +973,13 @@ if (text === "Курьеры" && id === ADMIN_ID) {
   // ===== Мои заказы =====
 if (text === "Мои заказы") {
   const orders = db
-    .prepare("SELECT * FROM orders WHERE tgNick=? ORDER BY created_at DESC LIMIT 10")
-    .all(username);
+    .prepare("SELECT * FROM orders WHERE client_chat_id=? ORDER BY created_at DESC LIMIT 10")
+    .all(id); // используем chat_id, а не username
 
   if (!orders.length) {
     return bot.sendMessage(id, "У вас пока нет заказов.");
   }
 
-  // Разделяем на активные и выполненные
   const activeOrders = orders.filter(o => o.status === "new" || o.status === "taken");
   const doneOrders = orders.filter(o => o.status === "delivered");
 
@@ -996,6 +995,7 @@ if (text === "Мои заказы") {
 
   return bot.sendMessage(id, msg, { parse_mode: "MarkdownV2" });
 }
+
 
 
   // ===== Панель администратора =====
