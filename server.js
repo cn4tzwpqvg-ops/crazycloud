@@ -716,9 +716,13 @@ bot.onText(/\/start/, (msg) => {
     ];
     console.log(`Курьер @${username} видит курьерское меню`);
   } else {
-    keyboard = [[{ text: "Личный кабинет" }, { text: "Поддержка" }]];
-    console.log(`Пользователь @${username} видит обычное меню`);
-  }
+  keyboard = [
+    [{ text: "Личный кабинет" }, { text: "Поддержка" }],
+    [{ text: "Мои заказы" }] // Добавляем кнопку для просмотра заказов
+  ];
+  console.log(`Пользователь @${username} видит обычное меню с кнопкой "Мои заказы"`);
+}
+
 
    // Отправляем сообщение
   bot.sendMessage(id, welcomeText, {
@@ -965,6 +969,34 @@ if (text === "Курьеры" && id === ADMIN_ID) {
   if (text === "Поддержка") {
     return bot.sendMessage(id, "Свяжитесь с поддержкой через @crazycloud_manager.");
   }
+
+  // ===== Мои заказы =====
+if (text === "Мои заказы") {
+  const orders = db
+    .prepare("SELECT * FROM orders WHERE tgNick=? ORDER BY created_at DESC LIMIT 10")
+    .all(username);
+
+  if (!orders.length) {
+    return bot.sendMessage(id, "У вас пока нет заказов.");
+  }
+
+  // Разделяем на активные и выполненные
+  const activeOrders = orders.filter(o => o.status === "new" || o.status === "taken");
+  const doneOrders = orders.filter(o => o.status === "delivered");
+
+  let msg = "";
+  if (activeOrders.length) {
+    msg += "*Активные заказы:*\n";
+    msg += activeOrders.map(o => `#${o.id} — статус: ${o.status}`).join("\n") + "\n\n";
+  }
+  if (doneOrders.length) {
+    msg += "*Выполненные заказы:*\n";
+    msg += doneOrders.map(o => `#${o.id} — создан: ${o.created_at || "—"}`).join("\n");
+  }
+
+  return bot.sendMessage(id, msg, { parse_mode: "MarkdownV2" });
+}
+
 
   // ===== Панель администратора =====
 // ===== Панель администратора =====
