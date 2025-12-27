@@ -998,6 +998,17 @@ if (text === "Мои заказы") {
   });
 }
 
+  if (text === "Назад") {
+  return bot.sendMessage(id, "Главное меню", {
+    reply_markup: {
+      keyboard: [
+        [{ text: "Личный кабинет" }, { text: "Поддержка" }, { text: "Мои заказы" }]
+      ],
+      resize_keyboard: true
+    }
+  });
+}
+
 if (text === "Активные заказы") {
   const orders = getUserOrders(username);
 
@@ -1075,17 +1086,7 @@ if (text === "Выполненные заказы") {
   });
 }
 
-// Обработка кнопки "Назад"
-if (text === "Назад") {
-  return bot.sendMessage(id, "Главное меню", {
-    reply_markup: {
-      keyboard: [
-        [{ text: "Личный кабинет" }, { text: "Поддержка" }, { text: "Мои заказы" }]
-      ],
-      resize_keyboard: true
-    }
-  });
-}
+
 
 
   // ===== Панель администратора =====
