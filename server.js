@@ -135,6 +135,21 @@ bot.on("polling_error", (err) => {
 });
 
 
+
+function getUserOrders(username) {
+  const clean = username.replace(/^@/, "");
+
+  return db.prepare(`
+    SELECT *
+    FROM orders
+    WHERE REPLACE(tgNick, '@', '') = ?
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all(clean);
+}
+
+
+
 // ================= Курьеры =================
 // ================= Курьеры =================
 function getCouriers() {
@@ -971,42 +986,57 @@ if (text === "Курьеры" && id === ADMIN_ID) {
     return bot.sendMessage(id, "Свяжитесь с поддержкой через @crazycloud_manager.");
   }
 
-  // ===== Мои заказы =====
-if (text === "Мои заказы") {
-  console.log("DEBUG: Ищем заказы для", username);
+  if (text === "Мои заказы") {
+  return bot.sendMessage(id, "Что показать?", {
+    reply_markup: {
+      keyboard: [
+        [{ text: "Активные заказы" }],
+        [{ text: "Выполненные заказы" }],
+      ],
+      resize_keyboard: true
+    }
+  });
+}
 
-  // убираем @ на всякий случай
-  const clean = username.replace(/^@/, "");
+  if (text === "Активные заказы") {
+  const orders = getUserOrders(username);
 
-  const orders = db.prepare(`
-    SELECT *
-    FROM orders
-    WHERE REPLACE(tgNick, '@', '') = ?
-    ORDER BY created_at DESC
-    LIMIT 10
-  `).all(clean);
+  const active = orders.filter(
+    o =>
+      o.status === "new" ||
+      o.status === "taken" ||
+      o.status === "in_progress"
+  );
 
-  console.log("DEBUG orders:", orders);
-
-  if (!orders.length) {
-    return bot.sendMessage(id, "У вас пока нет заказов.");
+  if (!active.length) {
+    return bot.sendMessage(id, "Активных заказов пока нет 🙂");
   }
 
-  // Разделяем на активные и выполненные
-  const activeOrders = orders.filter(o => o.status === "new" || o.status === "taken");
-  const doneOrders   = orders.filter(o => o.status === "delivered");
+  const msg = active
+    .map(o => `#${o.id} — статус: ${o.status}\n${o.orderText}`)
+    .join("\n\n");
 
-  let msg = "";
-  if (activeOrders.length) {
-    msg += "Активные заказы:\n";
-    msg += activeOrders.map(o => `#${o.id} — статус: ${o.status}`).join("\n") + "\n\n";
-  }
-  if (doneOrders.length) {
-    msg += "Выполненные заказы:\n";
-    msg += doneOrders.map(o => `#${o.id} — создан: ${o.created_at || "—"}`).join("\n");
+  return bot.sendMessage(id, msg);
+}
+
+
+if (text === "Выполненные заказы") {
+  const orders = getUserOrders(username);
+
+  const done = orders.filter(o => o.status === "delivered");
+
+  if (!done.length) {
+    return bot.sendMessage(id, "Выполненных заказов пока нет.");
   }
 
-  return bot.sendMessage(id, msg);   // ← без MarkdownV2, чтобы точно не падало
+  const msg = done
+    .map(o => {
+      const when = o.delivered_at || o.created_at;
+      return `#${o.id} — доставлен: ${new Date(when).toLocaleString("ru-RU")}`;
+    })
+    .join("\n\n");
+
+  return bot.sendMessage(id, msg);
 }
 
 
