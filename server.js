@@ -1,13 +1,5 @@
 require("dotenv").config();
-
-const path = require("path");
-const fs = require("fs");
-const express = require("express");
-const cors = require("cors");
-const http = require("http");
-const WebSocket = require("ws");
 const TelegramBot = require("node-telegram-bot-api");
-// const Database = require("better-sqlite3");
 const mysql = require("mysql2/promise");
 
 // ================= Настройки =================
@@ -16,143 +8,221 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_ID = parseInt(process.env.ADMIN_ID) || 7664644901;
 const PORT = 3000;
 const HOST = "0.0.0.0";
-// ================== Состояние ожидания выбора курьера для выполненных заказов ==================
-// ===== Новое состояние: выбор курьера для выполненных заказов =====
-const adminWaitingOrdersCourier = new Map(); // username => true
-const waitingReview = new Map(); 
 
-// chat_id => { orderId, courier, client }
+// ================= Состояние =================
+const adminWaitingOrdersCourier = new Map();
+const waitingReview = new Map();
 
-
-// ================= MySQL =================
-(async () => {
-  try {
-    db = await mysql.createConnection(process.env.MYSQL_URL);
-    console.log("MySQL connected");
-
-    console.log("Запуск бота и сервера");
-    console.log(" Telegram token:", TOKEN ? "OK" : " отсутствует");
-    console.log(" Сервер будет слушать:", `http://${HOST}:${PORT}`);
-    console.log(" Подключение к MySQL:", process.env.MYSQL_URL ? "OK" : "нет");
-
-    // ===== Создание таблиц =====
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS clients (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(255) UNIQUE,
-        first_name VARCHAR(255),
-        chat_id BIGINT,
-        subscribed TINYINT DEFAULT 1,
-        city VARCHAR(255),
-        created_at DATETIME,
-        last_active DATETIME
-      )
-    `);
-    console.log("Таблица clients готова");
-
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id VARCHAR(255) PRIMARY KEY,
-        tgNick VARCHAR(255),
-        city VARCHAR(255),
-        delivery VARCHAR(255),
-        payment VARCHAR(255),
-        orderText TEXT,
-        date DATE,
-        time TIME,
-        status VARCHAR(50) DEFAULT 'new',
-        courier_username VARCHAR(255),
-        taken_at DATETIME,
-        delivered_at DATETIME,
-        created_at DATETIME,
-        client_chat_id BIGINT
-      )
-    `);
-    console.log("Таблица orders готова");
-
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS couriers (
-        username VARCHAR(255) PRIMARY KEY,
-        chat_id BIGINT
-      )
-    `);
-    console.log("Таблица couriers готова");
-
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS order_messages (
-        order_id VARCHAR(255),
-        chat_id BIGINT,
-        message_id BIGINT,
-        PRIMARY KEY (order_id, chat_id)
-      )
-    `);
-    console.log("Таблица order_messages готова");
-
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS reviews (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        order_id VARCHAR(255),
-        client_username VARCHAR(255),
-        courier_username VARCHAR(255),
-        rating INT,
-        review_text TEXT,
-        created_at DATETIME
-      )
-    `);
-    console.log("Таблица reviews с рейтингом готова");
-
-    // ===== Индексы =====
-    await db.execute(`CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)`);
-    await db.execute(`CREATE INDEX IF NOT EXISTS idx_orders_courier ON orders(courier_username)`);
-    await db.execute(`CREATE INDEX IF NOT EXISTS idx_clients_username ON clients(username)`);
-
-    // ===== Вывод текущих данных =====
-    const [couriers] = await db.execute("SELECT username, chat_id FROM couriers");
-    console.log("Текущие курьеры и chat_id:", couriers);
-
-    const [clients] = await db.execute("SELECT username, chat_id FROM clients");
-    console.log("Текущие клиенты и chat_id:", clients);
-
-  } catch (err) {
-    console.error("Ошибка MySQL:", err);
-  }
-})();
-
-
-// ================= Telegram Bot =================
+// ================= Глобальные переменные =================
+let db;
+let COURIERS = {};
 const bot = new TelegramBot(TOKEN, { polling: true });
-
-// Восстанавливаем заказы после перезапуска
-restoreOrdersForClients();
-restoreOrdersForCouriers();
-
-
-// отключаем вебхуки — иначе polling может падать после рестартов
 bot.deleteWebHook().catch(() => {});
+bot.on("polling_error", (err) => console.error("Polling error:", err));
 
-bot.on("polling_error", (err) => {
-  console.error("Polling error:", err);
-});
+// ================= Инициализация БД =================
+async function initDB() {
+  db = await mysql.createConnection({
+    host: process.env.MYSQLHOST,
+    user: process.env.MYSQLUSER,
+    password: process.env.MYSQL_ROOT_PASSWORD,
+    database: process.env.MYSQL_DATABASE,
+    port: parseInt(process.env.MYSQLPORT) || 3306
+  });
 
+  console.log("MySQL connected");
 
-// ===== Восстановление заказов для обычных пользователей =====
+  // ===== Создание таблиц =====
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS clients (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      username VARCHAR(255) UNIQUE,
+      first_name VARCHAR(255),
+      chat_id BIGINT,
+      subscribed TINYINT DEFAULT 1,
+      city VARCHAR(255),
+      created_at DATETIME,
+      last_active DATETIME
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id VARCHAR(255) PRIMARY KEY,
+      tgNick VARCHAR(255),
+      city VARCHAR(255),
+      delivery VARCHAR(255),
+      payment VARCHAR(255),
+      orderText TEXT,
+      date DATE,
+      time TIME,
+      status VARCHAR(50) DEFAULT 'new',
+      courier_username VARCHAR(255),
+      taken_at DATETIME,
+      delivered_at DATETIME,
+      created_at DATETIME,
+      client_chat_id BIGINT
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS couriers (
+      username VARCHAR(255) PRIMARY KEY,
+      chat_id BIGINT
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS order_messages (
+      order_id VARCHAR(255),
+      chat_id BIGINT,
+      message_id BIGINT,
+      PRIMARY KEY (order_id, chat_id)
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS reviews (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      order_id VARCHAR(255),
+      client_username VARCHAR(255),
+      courier_username VARCHAR(255),
+      rating INT,
+      review_text TEXT,
+      created_at DATETIME
+    )
+  `);
+
+  // ===== Индексы =====
+  const indexes = [
+    ["orders", "idx_orders_status", "status"],
+    ["orders", "idx_orders_courier", "courier_username"],
+    ["clients", "idx_clients_username", "username"],
+    ["order_messages", "idx_order_messages_order_id", "order_id"],
+    ["reviews", "idx_reviews_order_id", "order_id"],
+    ["reviews", "idx_reviews_courier_username", "courier_username"]
+  ];
+
+  for (const [table, index, column] of indexes) {
+    await db.execute(`CREATE INDEX IF NOT EXISTS ${index} ON ${table}(${column})`).catch(() => {});
+  }
+
+  console.log("База данных и таблицы готовы");
+}
+
+// ================= Курьеры =================
+async function getCouriers() {
+  const [rows] = await db.execute("SELECT username, chat_id FROM couriers");
+  const map = {};
+  rows.forEach(r => { if (r.username && r.chat_id) map[r.username] = r.chat_id; });
+  return map;
+}
+
+async function addCourier(username, chatId) {
+  if (!username || !chatId) return false;
+  await db.execute(`
+    INSERT INTO couriers (username, chat_id)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE chat_id=VALUES(chat_id)
+  `, [username, chatId]);
+  COURIERS = await getCouriers();
+  console.log(`Курьер добавлен/обновлён: @${username}`);
+  return true;
+}
+
+async function removeCourier(username) {
+  await db.execute("DELETE FROM couriers WHERE username=?", [username]);
+  COURIERS = await getCouriers();
+  console.log(`Курьер удалён: @${username}`);
+}
+
+function isCourier(username) { return !!COURIERS[username]; }
+
+// ================= Клиенты =================
+async function addOrUpdateClient(username, first_name, chat_id) {
+  const now = new Date().toISOString();
+  await db.execute(`
+    INSERT INTO clients (username, first_name, subscribed, created_at, last_active, chat_id)
+    VALUES (?, ?, 1, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      first_name=VALUES(first_name),
+      last_active=VALUES(last_active),
+      chat_id=VALUES(chat_id),
+      subscribed=1
+  `, [username, first_name, now, now, chat_id]);
+}
+
+async function getClient(username) {
+  const [rows] = await db.execute("SELECT * FROM clients WHERE username=?", [username]);
+  return rows[0];
+}
+
+// ================= Заказы =================
+async function addOrder(order) {
+  if (!order.client_chat_id) {
+    const cleanNick = order.tgNick.replace(/^@+/, "");
+    const client = await getClient(cleanNick);
+    if (client?.chat_id) order.client_chat_id = client.chat_id;
+  }
+
+  await db.execute(`
+    INSERT INTO orders (id, tgNick, city, delivery, payment, orderText, date, time, status, created_at, client_chat_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [order.id, order.tgNick, order.city, order.delivery, order.payment, order.orderText, order.date, order.time, order.status || "new", new Date().toISOString(), order.client_chat_id || null]);
+}
+
+async function getOrderById(id) {
+  const [rows] = await db.execute("SELECT * FROM orders WHERE id=?", [id]);
+  return rows[0];
+}
+
+async function updateOrderStatus(id, status, courier_username = null) {
+  const now = new Date().toISOString();
+  if (status === "taken") await db.execute("UPDATE orders SET status=?, courier_username=?, taken_at=? WHERE id=?", [status, courier_username, now, id]);
+  else if (status === "delivered") await db.execute("UPDATE orders SET status=?, delivered_at=?, courier_username=? WHERE id=?", [status, now, courier_username, id]);
+  else if (status === "new") await db.execute("UPDATE orders SET status=?, courier_username=NULL, taken_at=NULL WHERE id=?", [status, id]);
+}
+
+async function takeOrderAtomic(orderId, username) {
+  if (!username) return false;
+  const now = new Date().toISOString();
+  const [res] = await db.execute("UPDATE orders SET status='taken', courier_username=?, taken_at=? WHERE id=? AND status='new'", [username, now, orderId]);
+  return res.affectedRows === 1;
+}
+
+// ================= Order Messages =================
+async function getOrderMessages(orderId) {
+  const [rows] = await db.execute("SELECT * FROM order_messages WHERE order_id=?", [orderId]);
+  return rows;
+}
+
+async function saveOrderMessage(orderId, chatId, messageId) {
+  await db.execute(`
+    INSERT INTO order_messages (order_id, chat_id, message_id)
+    VALUES (?, ?, ?)
+    ON DUPLICATE KEY UPDATE message_id=VALUES(message_id)
+  `, [orderId, chatId, messageId]);
+}
+
+async function clearOrderMessage(orderId, chatId) {
+  await db.execute("DELETE FROM order_messages WHERE order_id=? AND chat_id=?", [orderId, chatId]);
+}
+
+// ================= Восстановление заказов =================
 async function restoreOrdersForClients() {
-  const clients = db.prepare("SELECT username, chat_id FROM clients WHERE chat_id IS NOT NULL").all();
-  
+  const [clients] = await db.execute("SELECT username, chat_id FROM clients WHERE chat_id IS NOT NULL");
   for (const client of clients) {
-    const orders = db.prepare(`
+    const [orders] = await db.execute(`
       SELECT *
       FROM orders
       WHERE REPLACE(tgNick,'@','') = ?
       AND status IN ('new','taken')
       ORDER BY created_at DESC
-    `).all(client.username);
+    `, [client.username]);
 
     for (const order of orders) {
       try {
-        await bot.sendMessage(client.chat_id, buildOrderMessage(order), {
-          parse_mode: "MarkdownV2"
-        });
+        await bot.sendMessage(client.chat_id, buildOrderMessage(order), { parse_mode: "MarkdownV2" });
       } catch (err) {
         console.error(`Ошибка восстановления заказа №${order.id} для @${client.username}:`, err.message);
       }
@@ -161,211 +231,38 @@ async function restoreOrdersForClients() {
   console.log("Восстановление заказов для клиентов завершено");
 }
 
-// ===== Восстановление заказов для курьеров и админа =====
-function restoreOrdersForCouriers() {
-  const orders = db.prepare("SELECT * FROM orders WHERE status IN ('new','taken')").all();
-  orders.forEach(async (order) => {
+async function restoreOrdersForCouriers() {
+  const [orders] = await db.execute("SELECT * FROM orders WHERE status IN ('new','taken')");
+  for (const order of orders) {
     await sendOrUpdateOrder(order);
-  });
+  }
   console.log("Восстановление заказов для курьеров завершено");
 }
 
+// ================= Main =================
+(async function main() {
+  await initDB();
+  COURIERS = await getCouriers();
+  await addCourier(ADMIN_USERNAME, ADMIN_ID);
+  await restoreOrdersForClients();
+  await restoreOrdersForCouriers();
+  console.log("Бот и сервер запущены");
+})();
 
-
-function getUserOrders(username) {
-  const clean = username.replace(/^@/, "");
-
-  return db.prepare(`
-    SELECT *
-    FROM orders
-    WHERE REPLACE(tgNick, '@', '') = ?
-    ORDER BY created_at DESC
-    LIMIT 20
-  `).all(clean);
-}
-
-
-
-// ================= Курьеры =================
-// ================= Курьеры =================
-function getCouriers() {
-  const rows = db.prepare("SELECT username, chat_id FROM couriers").all();
-  const map = {};
-  rows.forEach(r => {
-    if (r.username && r.chat_id) {
-      map[r.username] = r.chat_id;
-    }
-  });
-  return map;
-}
-
-let COURIERS = getCouriers();
-
-// Админ = курьер (гарантированно)
-addCourier(ADMIN_USERNAME, ADMIN_ID);
-
-// Актуальный список
-console.log("Текущие курьеры:", COURIERS);
-
-function isCourier(username) {
-  return !!COURIERS[username];
-}
-
-function addCourier(username, chatId) {
-  if (!username || !chatId) return false;
-
-  db.prepare(`
-    INSERT OR REPLACE INTO couriers (username, chat_id)
-    VALUES (?, ?)
-  `).run(username, chatId);
-
-  COURIERS = getCouriers();
-  console.log(`Курьер добавлен/обновлён: @${username}`);
-  return true;
-}
-
-function removeCourier(username) {
-  db.prepare("DELETE FROM couriers WHERE username=?").run(username);
-  COURIERS = getCouriers();
-  console.log(`Курьер удалён: @${username}`);
-}
-
-function getOrderMessages(orderId) {
-  return db.prepare(
-    "SELECT * FROM order_messages WHERE order_id=?"
-  ).all(orderId);
-}
-
-function saveOrderMessage(orderId, chatId, messageId) {
-  db.prepare(`
-    INSERT OR REPLACE INTO order_messages (order_id, chat_id, message_id)
-    VALUES (?, ?, ?)
-  `).run(orderId, chatId, messageId);
-}
-
-function clearOrderMessage(orderId, chatId) {
-  db.prepare(
-    "DELETE FROM order_messages WHERE order_id=? AND chat_id=?"
-  ).run(orderId, chatId);
-}
-// ================= Клиенты =================
-// ================= Клиенты =================
-function addOrUpdateClient(username, first_name, chat_id) {
-   console.log(`Добавляем/обновляем клиента: ${username}, chat_id: ${chat_id}`);
-  const now = new Date().toISOString();
-  db.prepare(`
-    INSERT INTO clients (username, first_name, subscribed, created_at, last_active, chat_id)
-    VALUES (?, ?, 1, ?, ?, ?)
-    ON CONFLICT(username) DO UPDATE 
-      SET first_name=excluded.first_name,
-          last_active=excluded.last_active,
-          chat_id=excluded.chat_id,
-          subscribed=1
-  `).run(username, first_name, now, now, chat_id);
-}
-
-function getClient(username) {
-  return db.prepare("SELECT * FROM clients WHERE username=?").get(username);
-}
-
-
-
-function addOrder(order) {
-  console.log(`Новый заказ: ${order.id} от ${order.tgNick}`);
-
-  if (!order.client_chat_id) {
-  const cleanNick = order.tgNick.replace(/^@+/, "");
-  const client = getClient(cleanNick);
-
-  if (client?.chat_id) {
-    order.client_chat_id = client.chat_id;
-    console.log(
-      `client_chat_id подставлен из clients: ${order.client_chat_id}`
-    );
-  } else {
-    console.log(
-      `Нет chat_id для клиента @${cleanNick}, отзыв невозможен`
-    );
+// ================= Транзакция для отмены заказа =================
+async function releaseOrderTx(orderId) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    await updateOrderStatus(orderId, "new");
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
   }
 }
-
-
-  db.prepare(`
-    INSERT INTO orders (
-      id,
-      tgNick,
-      city,
-      delivery,
-      payment,
-      orderText,
-      date,
-      time,
-      status,
-      created_at,
-      client_chat_id
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    order.id,
-    order.tgNick,
-    order.city,
-    order.delivery,
-    order.payment,
-    order.orderText,
-    order.date,
-    order.time,
-    order.status || "new",
-    new Date().toISOString(),
-    order.client_chat_id || null
-  );
-}
-
-function getOrderById(id) { return db.prepare("SELECT * FROM orders WHERE id=?").get(id); }
-function updateOrderStatus(id, status, courier_username = null) {
-  console.log(`Обновляем заказ ${id} статус: ${status},курьер: ${courier_username}`);
-  const now = new Date().toISOString();
-  if (status === "taken") db.prepare("UPDATE orders SET status=?, courier_username=?, taken_at=? WHERE id=?").run(status, courier_username, now, id);
-else if (status === "delivered")
-  db.prepare(`
-    UPDATE orders 
-    SET status=?, delivered_at=?, courier_username=? 
-    WHERE id=?
-  `).run(status, now, courier_username, id);
-  else if (status === "new") db.prepare("UPDATE orders SET status=?, courier_username=NULL, taken_at=NULL WHERE id=?").run(status, id);
-}
-
-function takeOrderAtomic(orderId, username) {
-  if (!username) {
-    console.log(" takeOrderAtomic: пустой username");
-    return false;
-  }
-
-  const now = new Date().toISOString();
-
-  console.log(`Попытка взять заказ ${orderId} курьером ${username}`);
-
-  const res = db.prepare(`
-    UPDATE orders
-    SET status = 'taken',
-        courier_username = ?,
-        taken_at = ?
-    WHERE id = ?
-      AND status = 'new'
-  `).run(username, now, orderId);
-
-  console.log(
-    `Результат взятия: ${res.changes === 1 ? "успешно" : "не удалось"}`
-  );
-
-  return res.changes === 1;
-}
-
-
-// ================= Отказ от заказа (транзакция) =================
-const releaseOrderTx = db.transaction((orderId) => {
-  updateOrderStatus(orderId, "new");
-});
-
 
 
 // ================= Markdown =================
