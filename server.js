@@ -985,13 +985,13 @@ if (text === "Курьеры" && id === ADMIN_ID) {
   if (text === "Поддержка") {
     return bot.sendMessage(id, "Свяжитесь с поддержкой через @crazycloud_manager.");
   }
-
-  if (text === "Мои заказы") {
+if (text === "Мои заказы") {
   return bot.sendMessage(id, "Что показать?", {
     reply_markup: {
       keyboard: [
         [{ text: "Активные заказы" }],
         [{ text: "Выполненные заказы" }],
+        [{ text: "Назад" }] // ← добавляем кнопку назад
       ],
       resize_keyboard: true
     }
@@ -1006,17 +1006,33 @@ if (text === "Активные заказы") {
   );
 
   if (!active.length) {
-    return bot.sendMessage(id, "Активных заказов пока нет 🙂");
+    return bot.sendMessage(id, "Активных заказов пока нет 🙂", {
+      reply_markup: {
+        keyboard: [
+          [{ text: "Активные заказы" }],
+          [{ text: "Выполненные заказы" }],
+          [{ text: "Назад" }]
+        ],
+        resize_keyboard: true
+      }
+    });
   }
 
   const msg = active
     .map(o => `#${o.id} — статус: ${o.status}\n${o.orderText}`)
     .join("\n\n");
 
-  return bot.sendMessage(id, msg);
+  return bot.sendMessage(id, msg, {
+    reply_markup: {
+      keyboard: [
+        [{ text: "Активные заказы" }],
+        [{ text: "Выполненные заказы" }],
+        [{ text: "Назад" }]
+      ],
+      resize_keyboard: true
+    }
+  });
 }
-
-
 
 if (text === "Выполненные заказы") {
   const orders = getUserOrders(username);
@@ -1024,7 +1040,16 @@ if (text === "Выполненные заказы") {
   const done = orders.filter(o => o.status === "delivered");
 
   if (!done.length) {
-    return bot.sendMessage(id, "Выполненных заказов пока нет.");
+    return bot.sendMessage(id, "Выполненных заказов пока нет.", {
+      reply_markup: {
+        keyboard: [
+          [{ text: "Активные заказы" }],
+          [{ text: "Выполненные заказы" }],
+          [{ text: "Назад" }]
+        ],
+        resize_keyboard: true
+      }
+    });
   }
 
   const msg = done
@@ -1038,9 +1063,29 @@ if (text === "Выполненные заказы") {
     })
     .join("\n\n");
 
-  return bot.sendMessage(id, msg);
+  return bot.sendMessage(id, msg, {
+    reply_markup: {
+      keyboard: [
+        [{ text: "Активные заказы" }],
+        [{ text: "Выполненные заказы" }],
+        [{ text: "Назад" }]
+      ],
+      resize_keyboard: true
+    }
+  });
 }
 
+// Обработка кнопки "Назад"
+if (text === "Назад") {
+  return bot.sendMessage(id, "Главное меню", {
+    reply_markup: {
+      keyboard: [
+        [{ text: "Личный кабинет" }, { text: "Поддержка" }, { text: "Мои заказы" }]
+      ],
+      resize_keyboard: true
+    }
+  });
+}
 
 
   // ===== Панель администратора =====
