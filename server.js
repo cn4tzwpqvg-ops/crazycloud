@@ -702,10 +702,6 @@ bot.onText(/\/start/, (msg) => {
   const id = msg.from.id;
   const username = msg.from.username || `id${id}`;
   const first_name = msg.from.first_name || "";
- // Общая клавиатура главного меню пользователя
-  const mainUserKeyboard = [
-    [{ text: "Личный кабинет" }, { text: "Поддержка" }, { text: "Мои заказы" }]
-  ];
   // =========================
   // 🔹 Логирование старта
   console.log(` /start от @${username} (id: ${id}), имя: ${first_name}`);
@@ -990,9 +986,56 @@ if (text === "Курьеры" && id === ADMIN_ID) {
     return bot.sendMessage(id, "Свяжитесь с поддержкой через @crazycloud_manager.");
   }
 
-   // ===== Менюшка =====
+давай теперь перепиши эти блоки вот код менюшки  // ===== Менюшка =====
 if (text === "Мои заказы") {
   return bot.sendMessage(id, "Что показать?", {
+    reply_markup: {
+      keyboard: [
+        [{ text: "Активные заказы" }],
+        [{ text: "Выполненные заказы" }],
+        [{ text: "Назад" }] // ← добавляем кнопку назад
+      ],
+      resize_keyboard: true
+    }
+  });
+}
+
+  if (text === "Назад") {
+  return bot.sendMessage(id, "Главное меню", {
+    reply_markup: {
+      keyboard: [
+        [{ text: "Личный кабинет" }, { text: "Поддержка" }, { text: "Мои заказы" }]
+      ],
+      resize_keyboard: true
+    }
+  });
+}
+
+if (text === "Активные заказы") {
+  const orders = getUserOrders(username);
+
+  const active = orders.filter(
+    o => o.status === "new" || o.status === "taken"
+  );
+
+  if (!active.length) {
+    return bot.sendMessage(id, "Активных заказов пока нет 🙂", {
+      reply_markup: {
+        keyboard: [
+          [{ text: "Активные заказы" }],
+          [{ text: "Выполненные заказы" }],
+          [{ text: "Назад" }]
+        ],
+        resize_keyboard: true
+      }
+    });
+  }
+
+  const msg = active
+    .map(o => `#${o.id} — статус: ${o.status}\n${o.orderText}`)
+    .join("\n\n");
+
+  return bot.sendMessage(id, msg, {
     reply_markup: {
       keyboard: [
         [{ text: "Активные заказы" }],
@@ -1004,38 +1047,21 @@ if (text === "Мои заказы") {
   });
 }
 
-if (text === "Назад") {
-  return bot.sendMessage(id, "Главное меню", {
-    reply_markup: { keyboard: mainUserKeyboard, resize_keyboard: true }
-  });
-}
-
-if (text === "Активные заказы") {
-  const orders = getUserOrders(username);
-  const active = orders.filter(o => o.status === "new" || o.status === "taken");
-
-  if (!active.length) {
-    return bot.sendMessage(id, "Активных заказов пока нет 🙂", {
-      reply_markup: { keyboard: mainUserKeyboard, resize_keyboard: true }
-    });
-  }
-
-  const msg = active
-    .map(o => `#${o.id} — статус: ${o.status}\n${o.orderText}`)
-    .join("\n\n");
-
-  return bot.sendMessage(id, msg, {
-    reply_markup: { keyboard: mainUserKeyboard, resize_keyboard: true }
-  });
-}
-
 if (text === "Выполненные заказы") {
   const orders = getUserOrders(username);
+
   const done = orders.filter(o => o.status === "delivered");
 
   if (!done.length) {
     return bot.sendMessage(id, "Выполненных заказов пока нет.", {
-      reply_markup: { keyboard: mainUserKeyboard, resize_keyboard: true }
+      reply_markup: {
+        keyboard: [
+          [{ text: "Активные заказы" }],
+          [{ text: "Выполненные заказы" }],
+          [{ text: "Назад" }]
+        ],
+        resize_keyboard: true
+      }
     });
   }
 
@@ -1044,16 +1070,23 @@ if (text === "Выполненные заказы") {
       const deliveredAt = o.delivered_at ? new Date(o.delivered_at) : new Date(o.created_at);
       const dateStr = deliveredAt.toLocaleDateString("ru-RU");
       const timeStr = deliveredAt.toLocaleTimeString("ru-RU");
-      const textOrder = o.orderText || "—";
+      const textOrder = o.orderText ? o.orderText : "—";
+
       return `#${o.id} — доставлен: ${dateStr}, ${timeStr}\n${textOrder}`;
     })
     .join("\n\n");
 
   return bot.sendMessage(id, msg, {
-    reply_markup: { keyboard: mainUserKeyboard, resize_keyboard: true }
+    reply_markup: {
+      keyboard: [
+        [{ text: "Активные заказы" }],
+        [{ text: "Выполненные заказы" }],
+        [{ text: "Назад" }]
+      ],
+      resize_keyboard: true
+    }
   });
 }
-
 
 
 
