@@ -1029,8 +1029,12 @@ if (text === "Выполненные заказы") {
 
   const msg = done
     .map(o => {
-      const when = o.delivered_at || o.created_at;
-      return `#${o.id} — доставлен: ${new Date(when).toLocaleString("ru-RU")}`;
+      const deliveredAt = o.delivered_at ? new Date(o.delivered_at) : new Date(o.created_at);
+      const dateStr = deliveredAt.toLocaleDateString("ru-RU");
+      const timeStr = deliveredAt.toLocaleTimeString("ru-RU");
+      const textOrder = o.orderText ? o.orderText : "—";
+
+      return `#${o.id} — доставлен: ${dateStr}, ${timeStr}\n${textOrder}`;
     })
     .join("\n\n");
 
