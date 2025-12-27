@@ -974,9 +974,18 @@ if (text === "Курьеры" && id === ADMIN_ID) {
   // ===== Мои заказы =====
 if (text === "Мои заказы") {
   console.log("DEBUG: Ищем заказы для", username);
-  const orders = db
-    .prepare("SELECT * FROM orders WHERE tgNick=? ORDER BY created_at DESC LIMIT 10")
-    .all(username);
+
+  // убираем @ на всякий случай
+  const clean = username.replace(/^@/, "");
+
+  const orders = db.prepare(`
+    SELECT *
+    FROM orders
+    WHERE REPLACE(tgNick, '@', '') = ?
+    ORDER BY created_at DESC
+    LIMIT 10
+  `).all(clean);
+
   console.log("DEBUG orders:", orders);
 
   if (!orders.length) {
@@ -985,19 +994,19 @@ if (text === "Мои заказы") {
 
   // Разделяем на активные и выполненные
   const activeOrders = orders.filter(o => o.status === "new" || o.status === "taken");
-  const doneOrders = orders.filter(o => o.status === "delivered");
+  const doneOrders   = orders.filter(o => o.status === "delivered");
 
   let msg = "";
   if (activeOrders.length) {
-    msg += "*Активные заказы:*\n";
+    msg += "Активные заказы:\n";
     msg += activeOrders.map(o => `#${o.id} — статус: ${o.status}`).join("\n") + "\n\n";
   }
   if (doneOrders.length) {
-    msg += "*Выполненные заказы:*\n";
+    msg += "Выполненные заказы:\n";
     msg += doneOrders.map(o => `#${o.id} — создан: ${o.created_at || "—"}`).join("\n");
   }
 
-  return bot.sendMessage(id, msg, { parse_mode: "MarkdownV2" });
+  return bot.sendMessage(id, msg);   // ← без MarkdownV2, чтобы точно не падало
 }
 
 
