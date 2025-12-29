@@ -1,0 +1,145 @@
+{
+  "crazycloud_manager": {
+    "id": 7664644901,
+    "username": "crazycloud_manager",
+    "first_name": "MANAGER",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-07T20:48:28.094Z",
+    "last_active": "2025-12-15T22:16:46.882Z"
+  },
+  "__waiting_courier": {
+    "7664644901": "remove"
+  },
+  "sieiesA": {
+    "id": 7006006068,
+    "username": "sieiesA",
+    "first_name": "A",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-07T21:42:31.435Z",
+    "last_active": "2025-12-15T19:39:32.459Z"
+  },
+  "id475172862": {
+    "id": 475172862,
+    "username": "id475172862",
+    "first_name": "+888 0260 4916",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-11T01:37:55.100Z",
+    "last_active": "2025-12-15T18:02:05.127Z"
+  },
+  "alexmorozenko1": {
+    "id": 7762586022,
+    "username": "alexmorozenko1",
+    "first_name": "💯",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-11T01:38:52.107Z",
+    "last_active": "2025-12-11T01:38:52.107Z"
+  },
+  "skskzhaiaosiso": {
+    "id": 7866554681,
+    "username": "skskzhaiaosiso",
+    "first_name": "6",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T13:36:16.279Z",
+    "last_active": "2025-12-15T13:42:45.500Z"
+  },
+  "Jeka33310": {
+    "id": 810728601,
+    "username": "Jeka33310",
+    "first_name": "Jeka",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T13:43:10.151Z",
+    "last_active": "2025-12-15T18:09:16.891Z"
+  },
+  "styIed_manager": {
+    "id": 7797359190,
+    "username": "styIed_manager",
+    "first_name": "3",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T14:08:36.213Z",
+    "last_active": "2025-12-15T17:46:49.204Z"
+  },
+  "bIack1resale": {
+    "id": 7770298325,
+    "username": "bIack1resale",
+    "first_name": "4",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T16:29:59.190Z",
+    "last_active": "2025-12-15T16:29:59.204Z"
+  },
+  "id7810709054": {
+    "id": 7810709054,
+    "username": "id7810709054",
+    "first_name": "5",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T16:43:38.432Z",
+    "last_active": "2025-12-15T16:46:29.245Z"
+  },
+  "mmasaasha": {
+    "id": 7759521035,
+    "username": "mmasaasha",
+    "first_name": "1",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T17:47:23.106Z",
+    "last_active": "2025-12-15T17:47:23.109Z"
+  },
+  "qws7ks": {
+    "id": 922020943,
+    "username": "qws7ks",
+    "first_name": "квэскис",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T17:53:36.016Z",
+    "last_active": "2025-12-15T18:07:53.987Z"
+  },
+  "tutnettakova228": {
+    "id": 5787618830,
+    "username": "tutnettakova228",
+    "first_name": "KoT",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T18:05:42.218Z",
+    "last_active": "2025-12-15T18:05:49.929Z"
+  },
+  "fildebil007": {
+    "id": 5182928856,
+    "username": "fildebil007",
+    "first_name": "Твой Друг 🅿️🕉",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T18:16:32.653Z",
+    "last_active": "2025-12-15T18:16:32.657Z"
+  },
+  "chaiiqns": {
+    "id": 7871489332,
+    "username": "chaiiqns",
+    "first_name": "саша",
+    "subscribed": true,
+    "city": "",
+    "orders": [],
+    "created_at": "2025-12-15T18:25:08.132Z",
+    "last_active": "2025-12-15T18:25:11.008Z"
+  }
+}

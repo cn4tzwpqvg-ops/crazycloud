@@ -1,184 +1,314 @@
-const Database = require("better-sqlite3");
-const path = require("path");
+const mysql = require("mysql2/promise");
 
-// Путь к базе данных
-const db = new Database(path.join(__dirname, "data", "database.db"));
+let db;
 
-// ================= Таблицы =================
+async function initDB() {
+  db = await mysql.createConnection({
+    host: process.env.MYSQLHOST,
+    user: process.env.MYSQLUSER,
+    password: process.env.MYSQL_ROOT_PASSWORD,
+    database: process.env.MYSQLDATABASE,
+    port: parseInt(process.env.MYSQLPORT) || 3306,
+  });
 
-// Курьеры
-db.exec(`
-CREATE TABLE IF NOT EXISTS couriers (
-  username TEXT PRIMARY KEY,
-  chat_id INTEGER NOT NULL
-);
+  console.log("MySQL connected");
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS couriers (
+      username VARCHAR(255) PRIMARY KEY,
+      chat_id BIGINT NOT NULL
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS clients (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      username VARCHAR(255) UNIQUE,
+      first_name VARCHAR(255),
+      subscribed TINYINT DEFAULT 1,
+      city VARCHAR(255),
+      created_at DATETIME,
+      last_active DATETIME,
+      chat_id BIGINT,
+      banned TINYINT DEFAULT 0
+    )
+  `);
+
+  await db.execute(`
+  CREATE TABLE IF NOT EXISTS orders (
+    id VARCHAR(20) PRIMARY KEY,
+    tgNick VARCHAR(255),
+    city VARCHAR(255),
+    delivery VARCHAR(255),
+    payment VARCHAR(255),
+    orderText TEXT,
+    date VARCHAR(50),
+    time VARCHAR(50),
+    status VARCHAR(20) DEFAULT 'new',
+    courier_username VARCHAR(255),
+    taken_at DATETIME,
+    delivered_at DATETIME,
+    created_at DATETIME,
+    client_chat_id BIGINT
+  )
 `);
 
-// Клиенты
-db.exec(`
-CREATE TABLE IF NOT EXISTS clients (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT UNIQUE,
-  first_name TEXT,
-  subscribed INTEGER DEFAULT 1,
-  city TEXT,
-  created_at TEXT,
-  last_active TEXT
-);
-`);
 
-// Заказы
-db.exec(`
-CREATE TABLE IF NOT EXISTS orders (
-  id TEXT PRIMARY KEY,
-  tgNick TEXT,
-  city TEXT,
-  delivery TEXT,
-  payment TEXT,
-  orderText TEXT,
-  date TEXT,
-  time TEXT,
-  status TEXT DEFAULT 'new',
-  courier_username TEXT,
-  taken_at TEXT,
-  delivered_at TEXT,
-  created_at TEXT
-);
-`);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS stock (
+      product VARCHAR(255) PRIMARY KEY,
+      amount INT
+    )
+  `);
 
-// Склад (stock)
-db.exec(`
-CREATE TABLE IF NOT EXISTS stock (
-  product TEXT PRIMARY KEY,
-  amount INTEGER
-);
-`);
+  console.log("Tables ready");
+}
+
+// Возвращает подключение к базе
+function getDB() {
+  return db;
+}
+
+// ===== Баны =====
+async function isBannedByChatId(chatId) {
+  const [rows] = await getDB().execute(
+    "SELECT banned FROM clients WHERE chat_id=?",
+    [chatId]
+  );
+  return rows.length && rows[0].banned === 1;
+}
+
+async function banUserByChatId(chatId) {
+  await getDB().execute("UPDATE clients SET banned=1 WHERE chat_id=?", [chatId]);
+}
+
+async function unbanUserByChatId(chatId) {
+  await getDB().execute("UPDATE clients SET banned=0 WHERE chat_id=?", [chatId]);
+}
+
+// ===== Экспортируем всё наружу =====
+module.exports = {
+  initDB,
+  getDB,
+  // Баны
+  isBannedByChatId,
+  banUserByChatId,
+  unbanUserByChatId,
+  // Другие функции (клиенты, курьеры, заказы и т.д.)
+  // addOrUpdateClient,
+  // getClient,
+  // getAllClients,
+  // addCourier,
+  // removeCourier,
+  // getCouriers,
+  // и т.д.
+};
+
 
 // ================= Функции для работы с таблицами =================
 
-// ---------- Курьеры ----------
-function isCourier(username) {
-    const row = db.prepare("SELECT 1 FROM couriers WHERE username=?").get(username);
-    return !!row;
+// Курьеры
+async function isCourier(username) {
+  const [rows] = await db.execute("SELECT 1 FROM couriers WHERE username=?", [username]);
+  return rows.length > 0;
 }
 
-function isCourierById(chatId) {
-    const row = db.prepare("SELECT 1 FROM couriers WHERE chat_id=?").get(chatId);
-    return !!row;
+async function isCourierById(chatId) {
+  const [rows] = await db.execute("SELECT 1 FROM couriers WHERE chat_id=?", [chatId]);
+  return rows.length > 0;
 }
 
-function addCourier(username, chatId) {
-    db.prepare(`
-        INSERT OR REPLACE INTO couriers (username, chat_id)
-        VALUES (?, ?)
-    `).run(username, chatId);
+async function addCourier(username, chatId) {
+  await db.execute(`
+    INSERT INTO couriers (username, chat_id)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE chat_id=VALUES(chat_id)
+  `, [username, chatId]);
 }
 
-function removeCourier(username) {
-    db.prepare("DELETE FROM couriers WHERE username=?").run(username);
+async function removeCourier(username) {
+  await db.execute("DELETE FROM couriers WHERE username=?", [username]);
 }
 
-function getCouriers() {
-    const rows = db.prepare("SELECT * FROM couriers").all();
-    const map = {};
-    rows.forEach(r => map[r.username] = r.chat_id);
-    return map;
+async function getCouriers() {
+  const [rows] = await db.execute("SELECT * FROM couriers");
+  const map = {};
+  rows.forEach(r => map[r.username] = r.chat_id);
+  return map;
 }
 
-// ---------- Клиенты ----------
-function addOrUpdateClient(username, first_name) {
-    const now = new Date().toISOString();
-    db.prepare(`
-        INSERT INTO clients (username, first_name, subscribed, created_at, last_active)
-        VALUES (?, ?, 1, ?, ?)
-        ON CONFLICT(username) DO UPDATE SET
-            first_name=excluded.first_name,
-            last_active=excluded.last_active,
-            subscribed=1
-    `).run(username, first_name, now, now);
+// Клиенты
+async function addOrUpdateClient(username, first_name, chat_id) {
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' '); // MySQL DATETIME
+  await db.execute(`
+    INSERT INTO clients (username, first_name, subscribed, created_at, last_active, chat_id)
+    VALUES (?, ?, 1, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      first_name=VALUES(first_name),
+      last_active=VALUES(last_active),
+      chat_id=VALUES(chat_id),
+      subscribed=1
+  `, [username, first_name, now, now, chat_id]);
 }
 
-function getClient(username) {
-    return db.prepare("SELECT * FROM clients WHERE username=?").get(username);
+async function getClient(username) {
+  const [rows] = await db.execute("SELECT * FROM clients WHERE username=?", [username]);
+  return rows[0] || null;
 }
 
-// ---------- Заказы ----------
-function addOrder(order) {
-    db.prepare(`
-        INSERT INTO orders (id, tgNick, city, delivery, payment, orderText, date, time, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-        order.id, order.tgNick, order.city, order.delivery, order.payment,
-        order.orderText, order.date, order.time, order.status || "new", new Date().toISOString()
+// --- Клиенты: список и баны ---
+
+async function getAllClients() {
+  const [rows] = await db.execute("SELECT username, chat_id, banned FROM clients");
+  return rows;
+}
+
+async function banUser(username) {
+  await db.execute("UPDATE clients SET banned=1 WHERE username=?", [username]);
+}
+
+async function unbanUser(username) {
+  await db.execute("UPDATE clients SET banned=0 WHERE username=?", [username]);
+}
+
+async function isBanned(username) {
+  const [rows] = await db.execute(
+    "SELECT banned FROM clients WHERE username=?",
+    [username]
+  );
+  return rows.length && rows[0].banned === 1;
+}
+
+
+
+async function addOrder(order) {
+  if (!db) throw new Error("DB not initialized");
+  if (!order.id || !order.tgNick || !order.orderText) {
+    throw new Error("Missing required order fields");
+  }
+
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+  await db.execute(`
+    INSERT INTO orders (id, tgNick, city, delivery, payment, orderText, date, time, status, created_at, client_chat_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    order.id, 
+    order.tgNick, 
+    order.city || null, 
+    order.delivery || null, 
+    order.payment || null,
+    order.orderText, 
+    order.date || null, 
+    order.time || null, 
+    order.status || "new", 
+    now,
+    order.client_chat_id || null
+  ]);
+
+  return order.id;
+}
+
+
+async function getOrderById(id) {
+  if (!db) throw new Error("DB not initialized");
+  const [rows] = await db.execute("SELECT * FROM orders WHERE id=?", [id]);
+  return rows[0] || null;
+}
+
+async function getOrders(filter = {}) {
+  if (!db) throw new Error("DB not initialized");
+
+  let query = "SELECT * FROM orders WHERE 1=1";
+  const params = [];
+
+  if (filter.status) {
+    query += " AND status=?";
+    params.push(filter.status);
+  }
+  if (filter.courier_username) {
+    query += " AND courier_username=?";
+    params.push(filter.courier_username);
+  }
+  if (filter.client_chat_id) {
+    query += " AND client_chat_id=?";
+    params.push(filter.client_chat_id);
+  }
+
+  const [rows] = await db.execute(query, params);
+  return rows;
+}
+
+
+async function updateOrderStatus(id, status, courier_username = null) {
+  if (!db) throw new Error("DB not initialized");
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+  if (status === "taken") {
+    await db.execute(
+      "UPDATE orders SET status=?, courier_username=?, taken_at=? WHERE id=?",
+      [status, courier_username, now, id]
     );
+  } else if (status === "delivered") {
+    await db.execute(
+      "UPDATE orders SET status=?, delivered_at=? WHERE id=?",
+      [status, now, id]
+    );
+  } else if (status === "new") {
+    await db.execute(
+      "UPDATE orders SET status=?, courier_username=NULL, taken_at=NULL WHERE id=?",
+      [status, id]
+    );
+  }
 }
 
-function getOrderById(id) {
-    return db.prepare("SELECT * FROM orders WHERE id=?").get(id);
+
+
+
+
+// Stock
+async function getStock() {
+  if (!db) throw new Error("DB not initialized");
+  const [rows] = await db.execute("SELECT * FROM stock");
+  const s = {};
+  rows.forEach(r => s[r.product] = r.amount);
+  return s;
 }
 
-function getOrders(filter = {}) {
-    let query = "SELECT * FROM orders WHERE 1=1";
-    const params = [];
-    if (filter.status) {
-        query += " AND status=?";
-        params.push(filter.status);
-    }
-    if (filter.courier_username) {
-        query += " AND courier_username=?";
-        params.push(filter.courier_username);
-    }
-    return db.prepare(query).all(...params);
+async function updateStock(product, amount) {
+  if (!db) throw new Error("DB not initialized");
+  if (!product || typeof amount !== "number") throw new Error("Invalid stock data");
+  await db.execute(`
+    INSERT INTO stock (product, amount)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE amount=VALUES(amount)
+  `, [product, amount]);
 }
 
-function updateOrderStatus(id, status, courier_username = null) {
-    const now = new Date().toISOString();
-    if (status === "taken") {
-        db.prepare("UPDATE orders SET status=?, courier_username=?, taken_at=? WHERE id=?")
-          .run(status, courier_username, now, id);
-    } else if (status === "delivered") {
-        db.prepare("UPDATE orders SET status=?, delivered_at=? WHERE id=?")
-          .run(status, now, id);
-    } else if (status === "new") {
-        db.prepare("UPDATE orders SET status=?, courier_username=NULL, taken_at=NULL WHERE id=?")
-          .run(status, id);
-    }
-}
 
-// ---------- Stock ----------
-function getStock() {
-    const rows = db.prepare("SELECT * FROM stock").all();
-    const s = {};
-    rows.forEach(r => s[r.product] = r.amount);
-    return s;
-}
-
-function updateStock(product, amount) {
-    db.prepare(`
-        INSERT INTO stock (product, amount)
-        VALUES (?, ?)
-        ON CONFLICT(product) DO UPDATE SET amount=excluded.amount
-    `).run(product, amount);
-}
-
-// ================= Экспорт =================
 module.exports = {
-    db,
-    // Курьеры
-    isCourier,
-    isCourierById,
-    addCourier,
-    removeCourier,
-    getCouriers,
-    // Клиенты
-    addOrUpdateClient,
-    getClient,
-    // Заказы
-    addOrder,
-    getOrderById,
-    getOrders,
-    updateOrderStatus,
-    // Stock
-    getStock,
-    updateStock
+  initDB,
+  getDB,
+  // Курьеры
+  isCourier,
+  isCourierById,
+  addCourier,
+  removeCourier,
+  getCouriers,
+  // Клиенты
+  addOrUpdateClient,
+  getClient,
+  getAllClients,
+  banUser,
+  unbanUser,
+  isBanned,
+  // Заказы
+  addOrder,
+  getOrderById,
+  getOrders,
+  updateOrderStatus,
+  // Баны
+  isBannedByChatId,
+  banUserByChatId,
+  unbanUserByChatId,
 };
