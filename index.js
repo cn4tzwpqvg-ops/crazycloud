@@ -608,11 +608,12 @@ checkoutConfirm.addEventListener("click", async () => {
   };
 
   try {
-    const res = await fetch("https://bot-production-5271.up.railway.app/api/send-order", {
+    const res = await fetch("https://bot5-bot5-test.up.railway.app/api/send-order", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(orderData)
 });
+
 
 
     const json = await res.json();
