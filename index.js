@@ -11,6 +11,52 @@ if (tg) {
   }
 }
 
+const API_BASE = "https://bot-production-5271.up.railway.app";
+
+let priceInfo = {
+  ok: true,
+  originalPrice: 15,
+  finalPrice: 15,
+  discountType: null,
+  hasActive: false,
+  ordersCount: 0
+};
+
+function getTgNick() {
+  const u = window.Telegram?.WebApp?.initDataUnsafe?.user;
+  return u?.username ? "@" + u.username : null;
+}
+
+async function loadPriceInfo() {
+  const tgNick = getTgNick();
+  if (!tgNick) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/price-info`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tgNick,
+        tgUser: window.Telegram?.WebApp?.initDataUnsafe?.user || null
+      })
+    });
+
+    const json = await res.json();
+    if (json?.ok) priceInfo = json;
+  } catch (e) {
+    console.error("price-info error:", e);
+  }
+}
+
+function getUnitPrice() {
+  // если скидка есть — будет 13, если нет — 15
+  return Number(priceInfo?.finalPrice || 15);
+}
+
+function hasDiscount() {
+  return Number(priceInfo?.finalPrice || 15) < Number(priceInfo?.originalPrice || 15);
+}
+
 
 
 /* ---------------- Config ---------------- */
@@ -220,40 +266,53 @@ async function loadCategory(normId, displayLabel) {
 // --- После добавления всех кнопок ---
 adjustFlavorsPadding();
 
-    // --- Обработчик кнопки "Добавить в корзину" ---
-    const addBtn = document.getElementById("add-to-cart");
-    addBtn.onclick = () => {
-      if (!active) {
-        showToast("Пожалуйста, выберите вкус.");
-        return;
-      }
+  const addBtn = document.getElementById("add-to-cart");
+addBtn.onclick = () => {
+  if (!active) {
+    showToast("Пожалуйста, выберите вкус.");
+    return;
+  }
 
-      const existing = cart.find(it =>
-        it.category === displayLabel && it.flavor === active.flavor
-      );
+  const BASE_PRICE = 15;
+  const unitPrice =
+    (typeof CURRENT_PRICE === "number" && CURRENT_PRICE > 0)
+      ? CURRENT_PRICE
+      : BASE_PRICE;
 
-      if (existing) {
-        if (existing.qty < active.qty) {
-          existing.qty += 1;
-        } else {
-          showToast(`В наличии только ${active.qty} шт этого вкуса`);
-          return;
-        }
-      } else {
-        cart.push({
-          category: displayLabel,
-          flavor: active.flavor,
-          price: PRICE,
-          qty: 1,
-          maxQty: active.qty
-        });
-      }
+  const existing = cart.find(it =>
+    it.category === displayLabel && it.flavor === active.flavor
+  );
 
-      updateCart();
-      animateFlyToCart(document.querySelector(".flavor-btn.active"));
-      addBtn.scrollIntoView({ behavior: "smooth", block: "center" });
-      setTimeout(() => openCart(), 420);
-    };
+  if (existing) {
+    // ✅ подстрахуем цену, если вдруг надо
+    existing.price = unitPrice;
+    existing.originalPrice = BASE_PRICE;
+    existing.discountType = CURRENT_DISCOUNT_TYPE;
+
+    if (existing.qty < active.qty) {
+      existing.qty += 1;
+    } else {
+      showToast(`В наличии только ${active.qty} шт этого вкуса`);
+      return;
+    }
+  } else {
+    cart.push({
+      category: displayLabel,
+      flavor: active.flavor,
+      price: unitPrice,           // ✅ финальная цена (15 или 13)
+      originalPrice: BASE_PRICE,  // ✅ чтобы в корзине показать "15 → 13"
+      discountType: CURRENT_DISCOUNT_TYPE, // optional
+      qty: 1,
+      maxQty: active.qty
+    });
+  }
+
+  updateCart();
+  animateFlyToCart(document.querySelector(".flavor-btn.active"));
+  addBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+  setTimeout(() => openCart(), 420);
+};
+
 
   } catch (err) {
     console.error("Ошибка загрузки TSV:", err);
@@ -262,8 +321,26 @@ adjustFlavorsPadding();
 }
 
 
+function formatEuro(n) {
+  const x = Number(n || 0);
+  return Number.isInteger(x) ? `${x}€` : `${x.toFixed(2)}€`;
+}
 
+function priceHtml(item) {
+  const p = Number(item.price || 0);
+  const op = Number(item.originalPrice || 0);
 
+  // если есть скидка (originalPrice > price) — показываем "15€ → 13€"
+  if (op > 0 && p > 0 && p < op) {
+    return `
+      <span class="cart-old-price">${formatEuro(op)}</span>
+      <span class="cart-new-price">${formatEuro(p)}</span>
+    `;
+  }
+
+  // иначе просто одна цена
+  return `<span class="cart-new-price">${formatEuro(p || op || 15)}</span>`;
+}
 
 /* ---------------- Cart logic ---------------- */
 function updateCart() {
@@ -272,15 +349,36 @@ function updateCart() {
   let total = 0;
   let totalItems = 0;
 
+  // --- helpers (локально, чтобы просто копипаст) ---
+  const formatEuro = (n) => {
+    const x = Number(n || 0);
+    return Number.isInteger(x) ? `${x}€` : `${x.toFixed(2)}€`;
+  };
+
+  const unitPriceHtml = (it) => {
+    const p = Number(it.price || 0);
+    const op = Number(it.originalPrice || 0);
+
+    if (op > 0 && p > 0 && p < op) {
+      return `<span class="cart-old-price">${formatEuro(op)}</span> <span class="cart-new-price">${formatEuro(p)}</span>`;
+    }
+    return `<span class="cart-new-price">${formatEuro(p || op || 15)}</span>`;
+  };
+
   cart.forEach((it, idx) => {
-    total += it.price * (it.qty || 1);
-    totalItems += (it.qty || 1);
+    const qty = Number(it.qty || 1);
+    const price = Number(it.price || 0);
+
+    total += price * qty;
+    totalItems += qty;
 
     const row = document.createElement("div");
     row.className = "cart-item";
 
     const thumb = imageForCategoryLabel(it.category);
     const categoryInfoText = CATEGORY_INFO[normalizeKey(it.category)] || "";
+
+    const lineTotal = price * qty;
 
     row.innerHTML = `
       <img class="cart-thumb" src="${thumb}" alt="">
@@ -291,12 +389,20 @@ function updateCart() {
       <div style="display:flex;align-items:center;gap:12px">
         <div class="qty-control" data-idx="${idx}">
           <button class="qty-btn" data-action="dec" aria-label="Уменьшить">−</button>
-          <div class="qty-value">${it.qty || 1}</div>
+          <div class="qty-value">${qty}</div>
           <button class="qty-btn" data-action="inc" aria-label="Увеличить">+</button>
         </div>
-        <div style="min-width:56px;text-align:right;font-weight:700">
-          ${(it.price * (it.qty || 1))}€
+
+        <!-- Цена: показываем 15→13 если есть скидка + итог по строке -->
+        <div style="min-width:140px;text-align:right;">
+          <div style="font-weight:700; line-height:1.1;">
+            ${unitPriceHtml(it)}
+          </div>
+          <div style="opacity:.85; font-size:.85em; line-height:1.1;">
+            × ${qty} = ${formatEuro(lineTotal)}
+          </div>
         </div>
+
         <button class="remove" data-idx="${idx}" aria-label="Удалить"
           style="background:transparent;border:none;color:#ff6b6b;cursor:pointer;font-size:18px">
           ✖
@@ -305,7 +411,8 @@ function updateCart() {
     list.appendChild(row);
   });
 
-  document.getElementById("cart-total").textContent = total;
+  // total (с евро)
+  document.getElementById("cart-total").textContent = formatEuro(total);
 
   const badge = document.getElementById("cart-count");
   badge.style.display = "inline-block";
@@ -330,9 +437,12 @@ function updateCart() {
     cartListEl.classList.add("empty");
     cartListEl.innerHTML =
       '<div style="text-align:center;padding:18px;color:rgba(255,255,255,0.6)">Корзина пуста — добавьте вкус</div>';
-  } else { cartListEl.classList.remove("empty"); }
+  } else {
+    cartListEl.classList.remove("empty");
+  }
 
   updateCheckoutButton();
+
 
   // ------------------ управление кнопками количества ------------------
   document.querySelectorAll(".qty-control").forEach(ctrl => {
@@ -473,6 +583,45 @@ const checkoutPayment = document.getElementById("checkout-payment");
 const checkoutBtn = document.getElementById("checkout");
 const backToFlavors = document.getElementById("back-to-flavors");
 
+// ===== Цена для пользователя (15 или 13) =====
+let CURRENT_PRICE = 15;
+let CURRENT_DISCOUNT_TYPE = null;
+
+async function loadUserPrice() {
+  const tgNick = window.Telegram?.WebApp?.initDataUnsafe?.user?.username
+    ? "@" + window.Telegram.WebApp.initDataUnsafe.user.username
+    : null;
+
+  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+
+  if (!tgNick && !tgUser) {
+    CURRENT_PRICE = 15;
+    CURRENT_DISCOUNT_TYPE = null;
+    return;
+  }
+
+  try {
+    const res = await fetch("https://bot-production-5271.up.railway.app/api/get-price", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tgNick, tgUser })
+    });
+
+    const json = await res.json();
+    if (json.success) {
+      CURRENT_PRICE = Number(json.finalPrice || 15);
+      CURRENT_DISCOUNT_TYPE = json.discountType || null;
+    } else {
+      CURRENT_PRICE = 15;
+      CURRENT_DISCOUNT_TYPE = null;
+    }
+  } catch (e) {
+    CURRENT_PRICE = 15;
+    CURRENT_DISCOUNT_TYPE = null;
+  }
+}
+
+
 
 /* === Проверка Telegram ника (латиница, цифры, _, начинается с @) === */
 function validateTgNick(nick) {
@@ -607,49 +756,45 @@ checkoutConfirm.addEventListener("click", async () => {
     initData: window.Telegram?.WebApp?.initData || null
   };
 
-try {
-  const API_URL = "https://bot1-production-376a.up.railway.app/api/send-order";
+  try {
+    const res = await fetch("https://bot-production-5271.up.railway.app/api/send-order", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(orderData)
+});
 
-  // Добавляем client_chat_id для теста
-  const orderDataWithId = { ...orderData, client_chat_id: null };
 
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(orderDataWithId)
-  });
+    const json = await res.json();
 
-  const json = await res.json();
+    if (json.success) {
+      if (window.Telegram?.WebApp) {
+        window.Telegram.WebApp.showPopup({
+          title: "Заказ принят ✅",
+          message: `Спасибо! Менеджер свяжется с вами.\n\nВаш Telegram: ${tgNick}`,
+          buttons: [{ id: "ok", type: "default", text: "ОК" }]
+        });
 
-  if (json.success) {
-    if (window.Telegram?.WebApp) {
-      window.Telegram.WebApp.showPopup({
-        title: "Заказ принят ✅",
-        message: `Спасибо! Менеджер свяжется с вами.\n\nВаш Telegram: ${tgNick}`,
-        buttons: [{ id: "ok", type: "default", text: "ОК" }]
-      });
-
-      window.Telegram.WebApp.onEvent("popupClosed", () => {
+        window.Telegram.WebApp.onEvent("popupClosed", () => {
+          cart = [];
+          updateCart();
+          updateCheckoutButton();
+          closeCheckout();
+          window.Telegram.WebApp.close();
+        });
+      } else {
+        alert(`Спасибо! С вами свяжется менеджер.\nВаш Telegram: ${tgNick}`);
         cart = [];
         updateCart();
         updateCheckoutButton();
         closeCheckout();
-        window.Telegram.WebApp.close();
-      });
+      }
     } else {
-      alert(`Спасибо! С вами свяжется менеджер.\nВаш Telegram: ${tgNick}`);
-      cart = [];
-      updateCart();
-      updateCheckoutButton();
-      closeCheckout();
+      alert("Не удалось отправить заказ. Попробуйте позже.");
     }
-  } else {
-    alert("Не удалось отправить заказ. Попробуйте позже.");
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка сети. Проверьте соединение и попробуйте снова.");
   }
-} catch (err) {
-  console.error(err);
-  alert("Ошибка сети. Проверьте соединение и попробуйте снова.");
-}
 });
 
 
@@ -678,3 +823,12 @@ document.addEventListener("DOMContentLoaded", () => {
     loadCategory(normId, label);
   }
 });
+
+(async () => {
+  await loadUserPrice();
+
+  // после этого ОБЯЗАТЕЛЬНО перерисуй товары/корзину
+  // ВАЖНО: поставь сюда свои функции (какие у тебя есть):
+  // renderProducts();
+  // updateCart();
+})();

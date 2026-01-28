@@ -1224,4 +1224,12 @@ header {
   color: #383838;
   cursor: not-allowed;
 }
+.cart-old-price { 
+  text-decoration: line-through; 
+  opacity: .6; 
+  margin-right: 6px; 
+}
+.cart-new-price { 
+  font-weight: 700; 
+}
 
