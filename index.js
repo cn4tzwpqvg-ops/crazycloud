@@ -13,52 +13,6 @@ if (tg) {
 
 const API_BASE = "https://bot-production-5271.up.railway.app";
 
-let priceInfo = {
-  ok: true,
-  originalPrice: 15,
-  finalPrice: 15,
-  discountType: null,
-  hasActive: false,
-  ordersCount: 0
-};
-
-function getTgNick() {
-  const u = window.Telegram?.WebApp?.initDataUnsafe?.user;
-  return u?.username ? "@" + u.username : null;
-}
-
-async function loadPriceInfo() {
-  const tgNick = getTgNick();
-  if (!tgNick) return;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/price-info`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        tgNick,
-        tgUser: window.Telegram?.WebApp?.initDataUnsafe?.user || null
-      })
-    });
-
-    const json = await res.json();
-    if (json?.ok) priceInfo = json;
-  } catch (e) {
-    console.error("price-info error:", e);
-  }
-}
-
-function getUnitPrice() {
-  // если скидка есть — будет 13, если нет — 15
-  return Number(priceInfo?.finalPrice || 15);
-}
-
-function hasDiscount() {
-  return Number(priceInfo?.finalPrice || 15) < Number(priceInfo?.originalPrice || 15);
-}
-
-
-
 /* ---------------- Config ---------------- */
 const CSV_URL = "https://docs.google.com/spreadsheets/d/1cKCawmrGiIULnN2d_o0X-TrAOAVDyXpNHjeKr1_D2Lw/export?format=tsv&gid=0&v=" + Date.now();
 
@@ -95,7 +49,6 @@ function imageForCategoryLabel(label) {
   return CATEGORY_LABEL_TO_IMAGE[key] || "default.jpg";
 }
 
-const PRICE = 15;
 let cart = [];
 let stockData = [];
 let currentCategoryId = null;
@@ -192,7 +145,14 @@ async function loadCategory(normId, displayLabel) {
           <div class="info">
             <h2>${escapeHtml(displayLabel)}</h2>
             <div class="category-info" style="opacity:.8; margin-bottom:6px;">${infoText}</div>
-            <div class="price">${PRICE}€</div>
+            <div class="price">
+  ${
+    CURRENT_PRICE < 15
+      ? `<span style="text-decoration:line-through;opacity:.6">15€</span> <span style="color:#ff1e9b">${CURRENT_PRICE}€</span>`
+      : `15€`
+  }
+</div>
+
             <p style="opacity:.7">Ожидается поставка</p>
           </div>
         </div>`;
@@ -205,7 +165,14 @@ async function loadCategory(normId, displayLabel) {
         <div class="info">
           <h2>${escapeHtml(displayLabel)}</h2>
           <div class="category-info" style="opacity:.8; margin-bottom:6px;">${infoText}</div>
-          <div class="price">${PRICE}€</div>
+          <div class="price">
+  ${
+    CURRENT_PRICE < 15
+      ? `<span style="text-decoration:line-through;opacity:.6">15€</span> <span style="color:#ff1e9b">${CURRENT_PRICE}€</span>`
+      : `15€`
+  }
+</div>
+
           <div id="flavors-box" aria-label="Вкусы"></div>
           <button class="add-btn" id="add-to-cart" aria-disabled="true">Добавить в корзину</button>
         </div>
@@ -412,7 +379,8 @@ function updateCart() {
   });
 
   // total (с евро)
-  document.getElementById("cart-total").textContent = formatEuro(total);
+  document.getElementById("cart-total").textContent = total;
+
 
   const badge = document.getElementById("cart-count");
   badge.style.display = "inline-block";
@@ -813,22 +781,16 @@ checkoutModal.querySelectorAll("button").forEach(btn => {
 
 updateCheckoutButton();
 
-document.addEventListener("DOMContentLoaded", () => {
-  // Ищем первую категорию на странице
+document.addEventListener("DOMContentLoaded", async () => {
+  await loadUserPrice();   // ← СНАЧАЛА цена
+
   const firstCat = document.querySelector(".category");
   if (firstCat) {
     firstCat.classList.add("active");
     const normId = firstCat.dataset.id;
     const label = firstCat.textContent;
-    loadCategory(normId, label);
+    loadCategory(normId, label); // ← ПОТОМ рендер
   }
+
+  updateCart();
 });
-
-(async () => {
-  await loadUserPrice();
-
-  // после этого ОБЯЗАТЕЛЬНО перерисуй товары/корзину
-  // ВАЖНО: поставь сюда свои функции (какие у тебя есть):
-  // renderProducts();
-  // updateCart();
-})();
