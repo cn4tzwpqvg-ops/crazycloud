@@ -1,6 +1,20 @@
 /* ================= TELEGRAM MINI APP ================= */
 const tg = window.Telegram?.WebApp;
 
+function getTelegramContext() {
+  const tgApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+  const tgUser = (tgApp && tgApp.initDataUnsafe && tgApp.initDataUnsafe.user) ? tgApp.initDataUnsafe.user : null;
+
+  const fromInit = (tgUser && tgUser.username) ? tgUser.username : "";
+  const fromQuery = (new URLSearchParams(window.location.search).get("u")) || "";
+
+  const nick = (fromInit || fromQuery).replace(/^@/, "").trim();
+
+  return { tgApp, tgUser, tgNick: nick ? ("@" + nick) : null };
+}
+
+
+
 if (tg) {
   tg.ready();   // уведомляем Telegram, что Mini App готов
   tg.expand();  // разворачиваем на весь экран
@@ -551,32 +565,39 @@ const checkoutPayment = document.getElementById("checkout-payment");
 const checkoutBtn = document.getElementById("checkout");
 const backToFlavors = document.getElementById("back-to-flavors");
 
-// ===== Цена для пользователя (15 или 13) =====
+/// ===== Цена для пользователя (15 или 13) =====
 let CURRENT_PRICE = 15;
 let CURRENT_DISCOUNT_TYPE = null;
 
 async function loadUserPrice() {
-  const tgNick = window.Telegram?.WebApp?.initDataUnsafe?.user?.username
-    ? "@" + window.Telegram.WebApp.initDataUnsafe.user.username
-    : null;
+  // Telegram context (без optional chaining)
+  var tgApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+  var tgUser = (tgApp && tgApp.initDataUnsafe && tgApp.initDataUnsafe.user) ? tgApp.initDataUnsafe.user : null;
 
-  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+  var tgNick = (tgUser && tgUser.username) ? ("@" + tgUser.username) : null;
+  var client_chat_id = (tgUser && tgUser.id) ? Number(tgUser.id) : null;
 
-  if (!tgNick && !tgUser) {
+  // если вообще нет телеги — без скидки
+  if (!tgNick && !client_chat_id) {
     CURRENT_PRICE = 15;
     CURRENT_DISCOUNT_TYPE = null;
     return;
   }
 
   try {
-    const res = await fetch("https://bot-production-5271.up.railway.app/api/get-price", {
+    const res = await fetch(API_BASE + "/api/price-info", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tgNick, tgUser })
+      body: JSON.stringify({
+        tgNick: tgNick,             // может быть null
+        tgUser: tgUser || null,     // объект юзера
+        client_chat_id: client_chat_id
+      })
     });
 
     const json = await res.json();
-    if (json.success) {
+
+    if (json && json.ok) {
       CURRENT_PRICE = Number(json.finalPrice || 15);
       CURRENT_DISCOUNT_TYPE = json.discountType || null;
     } else {
@@ -588,6 +609,9 @@ async function loadUserPrice() {
     CURRENT_DISCOUNT_TYPE = null;
   }
 }
+
+
+
 
 
 
@@ -674,13 +698,15 @@ checkoutModal.addEventListener("click", (e) => {
 
 // --- Подтверждение заказа ---
 checkoutConfirm.addEventListener("click", async () => {
-  // Берем ник пользователя из Telegram Mini App, если он открыт
-  const tgNick = window.Telegram?.WebApp?.initDataUnsafe?.user?.username
-    ? "@" + window.Telegram.WebApp.initDataUnsafe.user.username
-    : null;
+  // 1) Контекст Telegram (без optional chaining, чтобы не "краснело")
+  var tgApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+  var tgUser = (tgApp && tgApp.initDataUnsafe && tgApp.initDataUnsafe.user) ? tgApp.initDataUnsafe.user : null;
+
+  // tgNick берем только если есть username
+  var tgNick = (tgUser && tgUser.username) ? ("@" + tgUser.username) : null;
 
   if (!tgNick) {
-    alert("Не удалось определить ваш Telegram ник. Откройте мини-приложение через Telegram.");
+    alert("Не удалось определить ваш Telegram ник. Откройте мини-приложение через Telegram и убедитесь, что у вас установлен username.");
     return;
   }
 
@@ -711,46 +737,52 @@ checkoutConfirm.addEventListener("click", async () => {
                       payment === "Card" ? "Карта" :
                       payment === "Crypto" ? "Криптовалюта" : payment;
 
-  // Данные для отправки
+  // 2) Данные для отправки
   const orderData = {
-    tgNick,
+    tgNick, // "@username"
     city,
     delivery: deliveryText,
     payment: paymentText,
     orderText: itemsText,
     date: orderDate,
     time: orderTime,
-    tgUser: window.Telegram?.WebApp?.initDataUnsafe?.user || null,
-    initData: window.Telegram?.WebApp?.initData || null
+
+    // Telegram user объект
+    tgUser: tgUser,
+
+    // initData (если нужно будет валидировать подпись)
+    initData: tgApp ? tgApp.initData : null,
+
+    // chat_id пользователя (id телеги)
+    client_chat_id: (tgUser && tgUser.id) ? Number(tgUser.id) : null
   };
 
   try {
-    const res = await fetch("https://bot-production-5271.up.railway.app/api/send-order", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(orderData)
-});
-
+    const res = await fetch(API_BASE + "/api/send-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(orderData)
+    });
 
     const json = await res.json();
 
-    if (json.success) {
-      if (window.Telegram?.WebApp) {
-        window.Telegram.WebApp.showPopup({
+    if (json && json.success) {
+      if (tgApp) {
+        tgApp.showPopup({
           title: "Заказ принят ✅",
-          message: `Спасибо! Менеджер свяжется с вами.\n\nВаш Telegram: ${tgNick}`,
+          message: "Спасибо! Менеджер свяжется с вами.\n\nВаш Telegram: " + tgNick,
           buttons: [{ id: "ok", type: "default", text: "ОК" }]
         });
 
-        window.Telegram.WebApp.onEvent("popupClosed", () => {
+        tgApp.onEvent("popupClosed", () => {
           cart = [];
           updateCart();
           updateCheckoutButton();
           closeCheckout();
-          window.Telegram.WebApp.close();
+          tgApp.close();
         });
       } else {
-        alert(`Спасибо! С вами свяжется менеджер.\nВаш Telegram: ${tgNick}`);
+        alert("Спасибо! С вами свяжется менеджер.\nВаш Telegram: " + tgNick);
         cart = [];
         updateCart();
         updateCheckoutButton();
