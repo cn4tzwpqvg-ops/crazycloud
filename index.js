@@ -25,7 +25,8 @@ if (tg) {
   }
 }
 
-const API_BASE = "https://bot-production-5271.up.railway.app";
+const API_BASE = "https://bot1-production-376a.up.railway.app";
+
 
 /* ---------------- Config ---------------- */
 const CSV_URL = "https://docs.google.com/spreadsheets/d/1cKCawmrGiIULnN2d_o0X-TrAOAVDyXpNHjeKr1_D2Lw/export?format=tsv&gid=0&v=" + Date.now();
@@ -62,7 +63,7 @@ function imageForCategoryLabel(label) {
   const key = normalizeKey(label);
   return CATEGORY_LABEL_TO_IMAGE[key] || "default.jpg";
 }
-
+const PRICE = 15;
 let cart = [];
 let stockData = [];
 let currentCategoryId = null;
@@ -758,42 +759,65 @@ checkoutConfirm.addEventListener("click", async () => {
   };
 
   try {
-    const res = await fetch(API_BASE + "/api/send-order", {
+    // ✅ нормализуем BASE (убираем / в конце, чтобы не было двойного //)
+    const API_URL = String(API_BASE || "").replace(/\/$/, "") + "/api/send-order";
+
+    console.log("[SEND ORDER] API_URL =", API_URL);
+    console.log("[SEND ORDER] orderData =", orderData);
+
+    const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(orderData)
     });
 
-    const json = await res.json();
+    // ✅ Railway может вернуть HTML/502, поэтому читаем как текст
+    const raw = await res.text();
+    console.log("[SEND ORDER] status =", res.status);
+    console.log("[SEND ORDER] raw =", raw);
 
-    if (json && json.success) {
-      if (tgApp) {
-        tgApp.showPopup({
-          title: "Заказ принят ✅",
-          message: "Спасибо! Менеджер свяжется с вами.\n\nВаш Telegram: " + tgNick,
-          buttons: [{ id: "ok", type: "default", text: "ОК" }]
-        });
+    // ✅ пробуем распарсить JSON
+    let json = null;
+    try { json = JSON.parse(raw); } catch (e) {}
 
-        tgApp.onEvent("popupClosed", () => {
-          cart = [];
-          updateCart();
-          updateCheckoutButton();
-          closeCheckout();
-          tgApp.close();
-        });
-      } else {
-        alert("Спасибо! С вами свяжется менеджер.\nВаш Telegram: " + tgNick);
+    // ✅ если сервер вернул не 200
+    if (!res.ok) {
+      alert("Сервер вернул ошибку: " + res.status + "\n" + (raw ? raw.slice(0, 400) : ""));
+      return;
+    }
+
+    // ✅ если 200, но success=false или json не распарсился
+    if (!json || !json.success) {
+      alert("Ошибка: " + ((json && json.error) ? json.error : (raw ? raw.slice(0, 400) : "UNKNOWN")));
+      return;
+    }
+
+    // ✅ УСПЕХ (твой старый код успеха)
+    if (tgApp) {
+      tgApp.showPopup({
+        title: "Заказ принят ✅",
+        message: "Спасибо! Менеджер свяжется с вами.\n\nВаш Telegram: " + tgNick,
+        buttons: [{ id: "ok", type: "default", text: "ОК" }]
+      });
+
+      tgApp.onEvent("popupClosed", () => {
         cart = [];
         updateCart();
         updateCheckoutButton();
         closeCheckout();
-      }
+        tgApp.close();
+      });
     } else {
-      alert("Не удалось отправить заказ. Попробуйте позже.");
+      alert("Спасибо! С вами свяжется менеджер.\nВаш Telegram: " + tgNick);
+      cart = [];
+      updateCart();
+      updateCheckoutButton();
+      closeCheckout();
     }
+
   } catch (err) {
-    console.error(err);
-    alert("Ошибка сети. Проверьте соединение и попробуйте снова.");
+    console.error("[SEND ORDER] error:", err);
+    alert("Ошибка сети/скрипта: " + (err && err.message ? err.message : String(err)));
   }
 });
 
